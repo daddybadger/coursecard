@@ -94,6 +94,26 @@ test("tapping the blank score region enters par once without resetting an adjust
   assert.equal(game.stored().scores[1][0], 4);
 });
 
+test("blank scores and scores without handicaps use the centred layout", () => {
+  const game = app();
+  game.setup().props.onNameChange(0, "Alex");
+  game.setup().props.onHandicapChange(0, "18");
+  game.setup().props.onAddPlayer();
+  game.setup().props.onNameChange(1, "Sam");
+  game.setup().props.onStart();
+  assert.equal(byClass(game.hole(), "score-display").length, 2);
+  assert.equal(byClass(game.hole(), "score-display has-net-score").length, 0);
+  nodes(game.hole()).find((node) => node.props?.["aria-label"] === "Enter par 3 for Alex").props.onClick();
+  nodes(game.hole()).find((node) => node.props?.["aria-label"] === "Enter par 3 for Sam").props.onClick();
+  const split = byClass(game.hole(), "score-display has-net-score");
+  const centred = byClass(game.hole(), "score-display");
+  assert.equal(split.length, 1);
+  assert.equal(centred.length, 1);
+  assert.equal(nodes(split[0]).find((node) => node.type === "output").props["aria-label"], "Alex: gross 3 strokes");
+  assert.equal(nodes(centred[0]).find((node) => node.type === "output").props["aria-label"], "Sam: gross 3 strokes");
+  assert.equal(byClass(centred[0], "net-score").length, 0);
+});
+
 test("blank score entry uses the selected red-tee par on the Old Course", () => {
   for (const [redPar, expected] of [["men", 4], ["women", 5]]) {
     const old = course.getCourse("old", 18);

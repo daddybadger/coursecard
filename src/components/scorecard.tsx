@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Flag,
   Menu,
   Home,
   Minus,
@@ -240,7 +239,7 @@ export function Scorecard() {
                         size="icon-lg"
                         variant="outline"
                       ><Minus /></Button>
-                      <div className="score-display" aria-live="polite">
+                      <div className={score != null && player.handicap != null ? "score-display has-net-score" : "score-display"} aria-live="polite">
                         {score == null ? (
                           <button type="button" className="score-placeholder-button"
                             aria-label={`Enter par ${holePar(currentHole, player)} for ${player.name}`}
@@ -292,7 +291,6 @@ export function Scorecard() {
           event.preventDefault();
           goHome();
         }}>
-          <span className="wordmark-icon"><Flag size={17} strokeWidth={2.2} /></span>
           <span>Course Card</span>
         </Link>
         <div className="course-context">
