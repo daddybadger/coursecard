@@ -9,13 +9,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Golf scorecard | Digital scorecard",
+  title: "Course Card | Golf scorecard",
   description: "A simple digital scorecard for your round of golf.",
-  applicationName: "Golf scorecard",
+  applicationName: "Course Card",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Golf scorecard",
+    title: "Course Card",
   },
 };
 

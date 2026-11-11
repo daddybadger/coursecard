@@ -10,7 +10,7 @@ vm.runInNewContext(ts.transpileModule(
   { compilerOptions: { module: ts.ModuleKind.CommonJS } },
 ).outputText, context);
 const { validHandicap, netScore, playingOrder } = context.exports;
-const holes = [1, 2, 3].map((number) => ({ number, strokeIndex: number }));
+const holes = Array.from({ length: 18 }, (_, i) => ({ number: i + 1, strokeIndex: i + 1 }));
 const order = (round, hole) => Array.from(playingOrder(round, hole, holes));
 
 test("optional handicap distinguishes blank from scratch and rejects invalid values", () => {

@@ -2,13 +2,13 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Golf scorecard",
-    short_name: "Scorecard",
+    name: "Course Card",
+    short_name: "Course Card",
     description: "A simple digital scorecard for your round of golf.",
-    start_url: "/?course=north-course",
+    start_url: "/",
     display: "standalone",
     background_color: "#f1f3ef",
-    theme_color: "#2f6857",
+    theme_color: "#123c2b",
     orientation: "portrait",
     icons: [
       {

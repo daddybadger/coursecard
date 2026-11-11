@@ -1,5 +1,5 @@
-const CACHE_NAME = "golf-scorecard-shell-v1";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/golf-ball.svg"];
+const CACHE_NAME = "golf-scorecard-billingbear-2024-v4";
+const APP_SHELL = ["/", "/manifest.webmanifest", "/golf-ball.svg", "/maps/billingbear-new-course-2024.webp", "/maps/billingbear-old-course-2024.webp"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -75,7 +75,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.startsWith("/_next/static/") || url.pathname === "/manifest.webmanifest" || url.pathname === "/golf-ball.svg") {
+  if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/maps/") || url.pathname === "/manifest.webmanifest" || url.pathname === "/golf-ball.svg") {
     event.respondWith(
       (async () => {
         const cached = await caches.match(request);
