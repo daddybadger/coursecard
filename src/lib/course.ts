@@ -14,9 +14,9 @@ export const teeOptions: { id: TeeId; label: string; color: string }[] = [
 ];
 
 export const sampleCourse = {
-  id: "north-course",
-  name: "North Course",
-  club: "Sample Golf Club",
+  id: "billingbear-new-course",
+  name: "New Course",
+  club: "Billingbear Golf Course",
   location: "Course preview",
   holes: [
     { number: 1, par: 4, strokeIndex: 7, tees: { red: 318, yellow: 347, white: 371 } },

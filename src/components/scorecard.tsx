@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { TouchEvent } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type { ReactNode } from "react";
+import { HolePager } from "@/components/hole-pager";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -20,11 +21,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { sampleCourse, teeOptions, type TeeId } from "@/lib/course";
 
-type Player = { id: string; name: string };
+type Player = { id: string; name: string; tee?: TeeId };
 type Round = {
   players: Player[];
   tee: TeeId;
-  scores: Record<number, number[]>;
+  scores: Record<number, (number | null)[]>;
   currentHole: number;
 };
 
@@ -92,17 +93,6 @@ function isRound(value: unknown): value is Round {
   );
 }
 
-function scoreLabel(score: number, par: number) {
-  const difference = score - par;
-  if (difference <= -3) return "Albatross";
-  if (difference === -2) return "Eagle";
-  if (difference === -1) return "Birdie";
-  if (difference === 0) return "Par";
-  if (difference === 1) return "Bogey";
-  if (difference === 2) return "Double bogey";
-  return `+${difference}`;
-}
-
 export function Scorecard() {
   const storedRound = useSyncExternalStore(
     subscribeToRound,
@@ -111,18 +101,15 @@ export function Scorecard() {
   );
   const round = parseRound(storedRound);
   const [playerNames, setPlayerNames] = useState([""]);
-  const [tee, setTee] = useState<TeeId>("white");
-  const [offlineReady, setOfflineReady] = useState(false);
+  const [playerTees, setPlayerTees] = useState<TeeId[]>(["white"]);
   const isOnline = useSyncExternalStore(
     subscribeOnlineStatus,
     getOnlineStatus,
     getServerOnlineStatus,
   );
-  const touchStart = useRef<number | null>(null);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
-    let active = true;
 
     void navigator.serviceWorker
       .register("/sw.js")
@@ -136,36 +123,24 @@ export function Scorecard() {
           .map((entry) => new URL(entry.name, location.href))
           .filter((url) => url.origin === location.origin && url.pathname.startsWith("/_next/static/"))
           .map((url) => `${url.pathname}${url.search}`);
-        const channel = new MessageChannel();
-        channel.port1.onmessage = (event: MessageEvent<{ type?: string }>) => {
-          if (event.data?.type === "CACHE_READY" && active) setOfflineReady(true);
-          channel.port1.close();
-        };
-        worker.postMessage({ type: "CACHE_ASSETS", urls: [...new Set(assets)] }, [channel.port2]);
+        worker.postMessage({ type: "CACHE_ASSETS", urls: [...new Set(assets)] });
       })
       .catch(() => undefined);
 
-    return () => {
-      active = false;
-    };
   }, []);
 
-  const currentHole = round
-    ? sampleCourse.holes[round.currentHole - 1]
-    : undefined;
   const isComplete = !!round && round.currentHole > sampleCourse.holes.length;
 
   function startRound() {
     const players = playerNames
-      .map((name) => name.trim())
-      .filter(Boolean)
-      .map((name, index) => ({ id: `${Date.now()}-${index}`, name }));
+      .map((name, index) => ({ id: `${Date.now()}-${index}`, name: name.trim(), tee: playerTees[index] ?? "white" }))
+      .filter((player) => player.name);
     if (players.length === 0) return;
 
     const scores = Object.fromEntries(
-      sampleCourse.holes.map((hole) => [hole.number, players.map(() => hole.par)]),
+      sampleCourse.holes.map((hole) => [hole.number, players.map(() => null)]),
     );
-    saveRound({ players, tee, scores, currentHole: 1 });
+    saveRound({ players, tee: "white", scores, currentHole: 1 });
   }
 
   function changeHole(direction: -1 | 1) {
@@ -185,7 +160,10 @@ export function Scorecard() {
     updateRound((previous) => {
       if (!previous || previous.currentHole > sampleCourse.holes.length) return previous;
       const scores = [...previous.scores[previous.currentHole]];
-      scores[playerIndex] = Math.max(1, Math.min(20, scores[playerIndex] + amount));
+      const score = scores[playerIndex];
+      scores[playerIndex] = score == null
+        ? sampleCourse.holes[previous.currentHole - 1].par
+        : Math.max(1, Math.min(20, score + amount));
       return {
         ...previous,
         scores: { ...previous.scores, [previous.currentHole]: scores },
@@ -200,23 +178,98 @@ export function Scorecard() {
   function clearRound() {
     saveRound(null);
     setPlayerNames([""]);
-    setTee("white");
+    setPlayerTees(["white"]);
   }
 
-  function handleTouchStart(event: TouchEvent<HTMLElement>) {
-    const target = event.target as HTMLElement;
-    touchStart.current = target.closest("button, input, a")
-      ? null
-      : event.touches[0]?.clientX ?? null;
-  }
+  function renderHole(holeNumber: number, navigate: (direction: -1 | 1) => void): ReactNode {
+    if (!round) return null;
+    const currentHole = sampleCourse.holes[holeNumber - 1];
+    if (!currentHole) return <ResultsScreen round={round} onNewRound={clearRound} />;
+    return (
+      <section
+        aria-label={`Hole ${currentHole.number} score entry`}
+        className="hole-screen"
+      >
+        <div className="hole-heading">
+          <div>
+            <p className="eyebrow">{sampleCourse.name}</p>
+            <h1>Hole <span>{currentHole.number}</span></h1>
+          </div>
+          <div className="hole-facts">
+            <div><span>Par</span><strong>{currentHole.par}</strong></div>
+            <div><span>Stroke index</span><strong>{currentHole.strokeIndex}</strong></div>
+          </div>
+        </div>
 
-  function handleTouchEnd(event: TouchEvent<HTMLElement>) {
-    const start = touchStart.current;
-    touchStart.current = null;
-    if (start === null) return;
-    const difference = (event.changedTouches[0]?.clientX ?? start) - start;
-    if (difference < -70) changeHole(1);
-    if (difference > 70) changeHole(-1);
+        <div className="hole-progress" role="progressbar" aria-label="Round progress" aria-valuemin={0} aria-valuemax={sampleCourse.holes.length} aria-valuenow={currentHole.number}>
+          <div className="progress-track">
+            <span style={{ width: `${(currentHole.number / sampleCourse.holes.length) * 100}%` }} />
+          </div>
+        </div>
+
+        <div className="hole-layout">
+          <section className="map-panel" aria-label="Hole map and tee distance">
+            <div className="map-panel-head">
+              {teeOptions.filter((option) => round.players.some((player) => (player.tee ?? round.tee) === option.id)).map((option) => (
+                <span className="map-distance" key={option.id}>
+                  <span className={`tee-dot tee-${option.id}`} aria-hidden="true" />
+                  <span>{option.label} <strong>{currentHole.tees[option.id]} <small>yd</small></strong></span>
+                </span>
+              ))}
+            </div>
+            <HoleMap holeNumber={currentHole.number} />
+          </section>
+
+          <section className="players-panel" aria-label="Player scores">
+            <div className="player-score-list">
+              {round.players.map((player, index) => {
+                const score = round.scores[currentHole.number][index];
+                const playerTee = player.tee ?? round.tee;
+                return (
+                  <div className="player-score-row" key={player.id}>
+                    <div className="player-identity">
+                      <div><strong>{player.name}</strong><span className="player-tee"><span className={`tee-dot tee-${playerTee}`} aria-hidden="true" />{teeOptions.find((option) => option.id === playerTee)?.label} tees</span></div>
+                    </div>
+                    <div className="score-stepper" aria-label={`${player.name} score`}>
+                      <Button
+                        aria-label={`Lower ${player.name}'s score`}
+                        className="score-step-button"
+                        disabled={score !== null && score <= 1}
+                        onClick={() => changeScore(index, -1)}
+                        size="icon-lg"
+                        variant="outline"
+                      ><Minus /></Button>
+                      <output aria-live="polite" aria-label={score === null ? `${player.name}: score not entered` : `${player.name}: ${score} strokes`} className="score-value">{score ?? "\u2014"}</output>
+                      <Button
+                        aria-label={`Raise ${player.name}'s score`}
+                        className="score-step-button"
+                        disabled={score !== null && score >= 20}
+                        onClick={() => changeScore(index, 1)}
+                        size="icon-lg"
+                        variant="outline"
+                      ><Plus /></Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+
+        <div className="round-navigation">
+          <Button
+            className="nav-button nav-previous"
+            disabled={currentHole.number === 1}
+            onClick={() => navigate(-1)}
+            variant="outline"
+          ><ChevronLeft /><span>Previous</span></Button>
+          <Button className="nav-button nav-next" onClick={() => navigate(1)}>
+            <span>{currentHole.number === sampleCourse.holes.length ? "Results" : "Next hole"}</span>
+            {currentHole.number === sampleCourse.holes.length ? <Trophy /> : <ChevronRight />}
+          </Button>
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -240,136 +293,52 @@ export function Scorecard() {
         {!round ? (
           <SetupScreen
             names={playerNames}
-            tee={tee}
+            playerTees={playerTees}
+            onPlayerTeeChange={(index, value) => setPlayerTees((previous) => previous.map((item, i) => i === index ? value : item))}
             onNameChange={updatePlayerName}
-            onAddPlayer={() => setPlayerNames((previous) => [...previous, ""])}
-            onRemovePlayer={(index) =>
-              setPlayerNames((previous) => previous.filter((_, i) => i !== index))
-            }
-            onTeeChange={setTee}
+            onAddPlayer={() => {
+              setPlayerNames((previous) => [...previous, ""]);
+              setPlayerTees((previous) => [...previous, "white"]);
+            }}
+            onRemovePlayer={(index) => {
+              setPlayerNames((previous) => previous.filter((_, i) => i !== index));
+              setPlayerTees((previous) => previous.filter((_, i) => i !== index));
+            }}
             onStart={startRound}
           />
         ) : isComplete ? (
           <ResultsScreen round={round} onNewRound={clearRound} />
-        ) : currentHole ? (
-          <section
-            aria-label={`Hole ${currentHole.number} score entry`}
-            className="hole-screen"
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
-            <div className="hole-heading">
-              <div>
-                <p className="eyebrow">{sampleCourse.name}</p>
-                <h1>Hole <span>{currentHole.number.toString().padStart(2, "0")}</span></h1>
-              </div>
-              <div className="hole-facts">
-                <div><span>Par</span><strong>{currentHole.par}</strong></div>
-                <div><span>Stroke index</span><strong>{currentHole.strokeIndex}</strong></div>
-              </div>
-            </div>
-
-            <div className="hole-progress" aria-label={`Hole ${currentHole.number} of 18`}>
-              <div className="progress-track">
-                <span style={{ width: `${(currentHole.number / sampleCourse.holes.length) * 100}%` }} />
-              </div>
-              <span>{currentHole.number} <i>/</i> {sampleCourse.holes.length}</span>
-            </div>
-
-            <div className="hole-layout">
-              <section className="map-panel" aria-label="Hole map and tee distance">
-                <div className="map-panel-head">
-                  <div><span className="section-label">Hole map</span><span className="map-hole-name">{sampleCourse.name}</span></div>
-                  <span className="map-distance"><Flag size={14} />{currentHole.tees[round.tee]} yd</span>
-                </div>
-                <HoleMap holeNumber={currentHole.number} />
-                <div className="map-legend">
-                  <span><i className="legend-tee" />{teeOptions.find((option) => option.id === round.tee)?.label} tee</span>
-                  <span><i className="legend-green" />Green</span>
-                  <span><i className="legend-water" />Water</span>
-                </div>
-              </section>
-
-              <section className="players-panel" aria-label="Player scores">
-                <div className="players-panel-head">
-                  <div><span className="section-label">Enter scores</span><span className="score-hint">Starts at par</span></div>
-                  <span className="tee-summary"><span className={`tee-dot tee-${round.tee}`} />{teeOptions.find((option) => option.id === round.tee)?.label} tees</span>
-                </div>
-                <div className="player-score-list">
-                  {round.players.map((player, index) => {
-                    const score = round.scores[currentHole.number][index];
-                    return (
-                      <div className="player-score-row" key={player.id}>
-                        <div className="player-identity">
-                          <span className="player-avatar">{player.name.slice(0, 1).toUpperCase()}</span>
-                          <div><strong>{player.name}</strong><span>{scoreLabel(score, currentHole.par)}</span></div>
-                        </div>
-                        <div className="score-stepper" aria-label={`${player.name} score`}>
-                          <Button
-                            aria-label={`Lower ${player.name}'s score`}
-                            className="score-step-button"
-                            disabled={score <= 1}
-                            onClick={() => changeScore(index, -1)}
-                            size="icon-lg"
-                            variant="outline"
-                          ><Minus /></Button>
-                          <output aria-live="polite" className="score-value">{score}</output>
-                          <Button
-                            aria-label={`Raise ${player.name}'s score`}
-                            className="score-step-button"
-                            disabled={score >= 20}
-                            onClick={() => changeScore(index, 1)}
-                            size="icon-lg"
-                            variant="outline"
-                          ><Plus /></Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            </div>
-
-            <div className="round-navigation">
-              <Button
-                className="nav-button nav-previous"
-                disabled={currentHole.number === 1}
-                onClick={() => changeHole(-1)}
-                variant="outline"
-              ><ChevronLeft /><span>Previous</span></Button>
-              <span className="swipe-note">Swipe to move between holes</span>
-              <Button className="nav-button nav-next" onClick={() => changeHole(1)}>
-                <span>{currentHole.number === sampleCourse.holes.length ? "Results" : "Next hole"}</span>
-                {currentHole.number === sampleCourse.holes.length ? <Trophy /> : <ChevronRight />}
-              </Button>
-            </div>
-          </section>
-        ) : null}
+        ) : (
+          <HolePager
+            key={round.currentHole}
+            hole={round.currentHole}
+            lastHole={sampleCourse.holes.length}
+            onNavigate={changeHole}
+            renderHole={renderHole}
+          />
+        )}
       </main>
 
-      <footer className="page-footer">
-        <span>{offlineReady ? "Ready for offline play" : "Scores are saved on this device"}</span>
-        {!isOnline && <span className="offline-footer"><Check size={14} />Ready to play offline</span>}
-      </footer>
+
     </div>
   );
 }
 
 function SetupScreen({
   names,
-  tee,
+  playerTees,
+  onPlayerTeeChange,
   onNameChange,
   onAddPlayer,
   onRemovePlayer,
-  onTeeChange,
   onStart,
 }: {
   names: string[];
-  tee: TeeId;
+  playerTees: TeeId[];
+  onPlayerTeeChange: (index: number, tee: TeeId) => void;
   onNameChange: (index: number, name: string) => void;
   onAddPlayer: () => void;
   onRemovePlayer: (index: number) => void;
-  onTeeChange: (tee: TeeId) => void;
   onStart: () => void;
 }) {
   const canStart = names.some((name) => name.trim().length > 0);
@@ -377,72 +346,69 @@ function SetupScreen({
   return (
     <section className="setup-screen">
       <div className="setup-intro">
-        <p className="eyebrow">New round <span className="sample-tag">Sample course</span></p>
-        <h1>Good golf<br /><em>starts here.</em></h1>
-        <p className="setup-description">Set up your group and choose the tees for today.</p>
+        <h1>{sampleCourse.club}</h1>
       </div>
 
       <div className="setup-grid">
         <section className="setup-panel course-panel">
           <div className="panel-heading">
-            <span className="panel-icon"><Flag size={17} /></span>
-            <div><h2>Course</h2><p>{sampleCourse.club}</p></div>
-            <span className="sample-pill">Demo</span>
+            <h2>Course</h2>
           </div>
           <div className="course-nameplate">
-            <span className="course-overline">18 holes <i /> Par 72</span>
             <strong>{sampleCourse.name}</strong>
-            <span className="course-place">18-hole sample course</span>
+            <span className="course-overline">{sampleCourse.holes.length} holes <i /> Par {sampleCourse.holes.reduce((total, hole) => total + hole.par, 0)}</span>
           </div>
-          <div className="tee-select-head"><span className="section-label">Choose tees</span><span>Yardage varies by hole</span></div>
-          <div className="tee-options" role="group" aria-label="Choose tee color">
+          <dl className="course-distances" aria-label="Course distance by tee">
             {teeOptions.map((option) => {
               const total = sampleCourse.holes.reduce((sum, hole) => sum + hole.tees[option.id], 0);
               return (
-                <button
-                  aria-pressed={tee === option.id}
-                  className={`tee-option ${tee === option.id ? "is-selected" : ""}`}
-                  key={option.id}
-                  onClick={() => onTeeChange(option.id)}
-                  type="button"
-                >
-                  <span className={`tee-dot tee-${option.id}`} />
-                  <span className="tee-option-text"><strong>{option.label}</strong><small>{total.toLocaleString()} yd</small></span>
-                  {tee === option.id && <Check className="tee-check" size={16} />}
-                </button>
+                <div className="course-distance" key={option.id}>
+                  <dt><span className={`tee-dot tee-${option.id}`} aria-hidden="true" />{option.label}</dt>
+                  <dd>{total.toLocaleString()} <span>yd</span></dd>
+                </div>
               );
             })}
-          </div>
+          </dl>
         </section>
 
         <section className="setup-panel players-setup-panel">
           <div className="panel-heading">
-            <span className="panel-icon panel-icon-coral"><Trophy size={17} /></span>
-            <div><h2>Players</h2><p>Add up to four players</p></div>
+            <h2>Players</h2>
             <span className="player-count">{names.filter((name) => name.trim()).length} / 4</span>
           </div>
           <div className="player-input-list">
             {names.map((name, index) => (
-              <div className="player-input-row" key={index}>
-                <span className="player-input-number">{String(index + 1).padStart(2, "0")}</span>
-                <label className="sr-only" htmlFor={`player-${index}`}>Player {index + 1} name</label>
-                <input
-                  autoComplete="off"
-                  id={`player-${index}`}
-                  maxLength={24}
-                  onChange={(event) => onNameChange(index, event.target.value)}
-                  placeholder={`Player ${index + 1} name`}
-                  value={name}
-                />
-                {names.length > 1 && (
-                  <Button
-                    aria-label={`Remove player ${index + 1}`}
-                    className="remove-player-button"
-                    onClick={() => onRemovePlayer(index)}
-                    size="icon-sm"
-                    variant="ghost"
-                  ><Trash2 /></Button>
-                )}
+              <div className="player-setup-entry" key={index}>
+                <div className="player-input-row">
+                  <span className="player-input-number">{index + 1}</span>
+                  <label className="sr-only" htmlFor={`player-${index}`}>Player {index + 1} name</label>
+                  <input
+                    autoComplete="off"
+                    id={`player-${index}`}
+                    maxLength={24}
+                    onChange={(event) => onNameChange(index, event.target.value)}
+                    placeholder={`Player ${index + 1} name`}
+                    value={name}
+                  />
+                  {names.length > 1 && (
+                    <Button
+                      aria-label={`Remove player ${index + 1}`}
+                      className="remove-player-button"
+                      onClick={() => onRemovePlayer(index)}
+                      size="icon-sm"
+                      variant="ghost"
+                    ><Trash2 /></Button>
+                  )}
+                </div>
+                <div className="player-tee-options" role="group" aria-label={`Player ${index + 1} tees`}>
+                  {teeOptions.map((option) => (
+                    <button key={option.id} type="button"
+                      aria-pressed={(playerTees[index] ?? "white") === option.id}
+                      onClick={() => onPlayerTeeChange(index, option.id)}>
+                      <span className={`tee-dot tee-${option.id}`} aria-hidden="true" />{option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
@@ -452,7 +418,6 @@ function SetupScreen({
             </Button>
           )}
           <div className="setup-bottom">
-            <span><Check size={15} /> Works without a signal</span>
             <Button className="start-button" disabled={!canStart} onClick={onStart}>
               Start round <ArrowRight />
             </Button>
@@ -490,10 +455,12 @@ function HoleMap({ holeNumber }: { holeNumber: number }) {
 function ResultsScreen({ round, onNewRound }: { round: Round; onNewRound: () => void }) {
   const totals = round.players.map((player, index) => {
     const score = sampleCourse.holes.reduce(
-      (sum, hole) => sum + round.scores[hole.number][index],
+      (sum, hole) => sum + (round.scores[hole.number][index] ?? 0),
       0,
     );
-    return { player, index, score, toPar: score - 72 };
+    const played = sampleCourse.holes.filter((hole) => round.scores[hole.number][index] != null);
+    const playedPar = played.reduce((sum, hole) => sum + hole.par, 0);
+    return { player, index, score, played: played.length, toPar: score - playedPar };
   });
 
   return (
@@ -502,18 +469,18 @@ function ResultsScreen({ round, onNewRound }: { round: Round; onNewRound: () => 
         <span className="results-icon"><Trophy size={23} /></span>
         <p className="eyebrow">Round complete</p>
         <h1>That&apos;s the round.</h1>
-        <p>{sampleCourse.name} <i /> 18 holes <i /> {teeOptions.find((option) => option.id === round.tee)?.label} tees</p>
+        <p>{sampleCourse.name} <i /> 18 holes</p>
       </div>
       <div className="results-table-wrap">
         <table className="results-table">
           <thead><tr><th>Player</th>{sampleCourse.holes.map((hole) => <th key={hole.number}>{hole.number}</th>)}<th>Par</th><th>Total</th></tr></thead>
           <tbody>
-            {totals.map(({ player, index, score, toPar }) => (
+            {totals.map(({ player, index, score, toPar, played }) => (
               <tr key={player.id}>
                 <th scope="row"><span className="result-avatar">{player.name.slice(0, 1).toUpperCase()}</span>{player.name}</th>
-                {sampleCourse.holes.map((hole) => <td key={hole.number}>{round.scores[hole.number][index]}</td>)}
+                {sampleCourse.holes.map((hole) => <td key={hole.number}>{round.scores[hole.number][index] ?? "\u2014"}</td>)}
                 <td>72</td>
-                <td className="total-score">{score}<small>{toPar === 0 ? "E" : toPar > 0 ? `+${toPar}` : toPar}</small></td>
+                <td className="total-score">{played ? score : "\u2014"}<small>{played === sampleCourse.holes.length ? (toPar === 0 ? "E" : toPar > 0 ? `+${toPar}` : toPar) : `${played}/${sampleCourse.holes.length} scored`}</small></td>
               </tr>
             ))}
           </tbody>
