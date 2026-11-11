@@ -185,8 +185,6 @@ input {
 .course-context { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .context-club { color: #75817a; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
 .context-course { color: #25382f; font-size: 15px; font-weight: 600; }
-.connection-status { display: flex; justify-self: end; align-items: center; gap: 7px; color: #477761; font-size: 14px; font-weight: 600; }
-.connection-status.is-offline { color: #9a6e2d; }
 .main-content { width: min(100% - 48px, 1080px); min-height: calc(100vh - 128px); margin: 0 auto; padding: 48px 0 42px; }
 .setup-screen { animation: rise-in 420ms ease both; }
 .setup-intro { margin: 0 0 32px 4px; }
@@ -382,3 +380,21 @@ input {
   .player-tee-options { gap: 6px; }
   .player-tee-options button { gap: 5px; font-size: 16px; }
 }
+
+.handicap-field { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-block: 12px 4px; }
+.handicap-field label { color: #fff; font-size: 16px; font-weight: 650; }
+.handicap-field label span { color: #e0ebe0; font-size: 14px; font-weight: 500; }
+.handicap-field input { width: 96px; min-height: 48px; padding: 8px 10px; border: 2px solid #fff; border-radius: 8px; background: #fff; color: #142c20; font-size: 20px; font-weight: 700; }
+.handicap-field input:focus-visible { outline: 3px solid #e6ef72; outline-offset: 3px; }
+.handicap-field input::placeholder { color: #526658; opacity: 1; font-size: 16px; }
+.handicap-error { flex-basis: 100%; margin: 0; color: #fff1a8; font-size: 15px; }
+.player-handicap { font-size: 14px; font-weight: 500; }
+.score-display { display: flex; min-width: 64px; flex-direction: column; align-items: center; gap: 6px; }
+.net-score { color: #e0ebe0; font-size: 16px; font-weight: 650; white-space: nowrap; }
+.header-menu { position: relative; justify-self: end; z-index: 10; }
+.header-menu summary { display: flex; width: 52px; height: 52px; align-items: center; justify-content: center; border: 2px solid #174b36; border-radius: 8px; color: #174b36; background: #fff; cursor: pointer; list-style: none; }
+.header-menu summary::-webkit-details-marker { display: none; }
+.header-menu summary:focus-visible, .header-menu button:focus-visible { outline: 3px solid #174b36; outline-offset: 3px; }
+.header-menu nav { position: absolute; top: calc(100% + 10px); right: 0; min-width: 200px; padding: 8px; border: 2px solid #174b36; border-radius: 10px; background: #fff; box-shadow: 0 8px 24px #123c2b26; }
+.header-menu button { display: flex; width: 100%; min-height: 52px; align-items: center; gap: 12px; padding: 12px; border-radius: 6px; color: #174b36; background: #fff; font-size: 18px; font-weight: 750; text-align: left; cursor: pointer; }
+.header-menu button:hover { background: #e5eee5; }

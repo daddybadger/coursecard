@@ -10,43 +10,20 @@ import {
   ChevronLeft,
   ChevronRight,
   Flag,
+  Menu,
+  Home,
   Minus,
   Plus,
   RotateCcw,
   Trash2,
   Trophy,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { sampleCourse, teeOptions, type TeeId } from "@/lib/course";
 
-type Player = { id: string; name: string; tee?: TeeId };
-type Round = {
-  players: Player[];
-  tee: TeeId;
-  scores: Record<number, (number | null)[]>;
-  currentHole: number;
-};
+import { netScore, playingOrder, validHandicap, type Round } from "@/lib/scoring";
 
 const storageKey = "golf-scorecard-round-v1";
-
-function subscribeOnlineStatus(callback: () => void) {
-  window.addEventListener("online", callback);
-  window.addEventListener("offline", callback);
-  return () => {
-    window.removeEventListener("online", callback);
-    window.removeEventListener("offline", callback);
-  };
-}
-
-function getOnlineStatus() {
-  return navigator.onLine;
-}
-
-function getServerOnlineStatus() {
-  return true;
-}
 
 function subscribeToRound(callback: () => void) {
   window.addEventListener("storage", callback);
@@ -102,11 +79,7 @@ export function Scorecard() {
   const round = parseRound(storedRound);
   const [playerNames, setPlayerNames] = useState([""]);
   const [playerTees, setPlayerTees] = useState<TeeId[]>(["white"]);
-  const isOnline = useSyncExternalStore(
-    subscribeOnlineStatus,
-    getOnlineStatus,
-    getServerOnlineStatus,
-  );
+  const [playerHandicaps, setPlayerHandicaps] = useState<string[]>([""]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
@@ -132,8 +105,11 @@ export function Scorecard() {
   const isComplete = !!round && round.currentHole > sampleCourse.holes.length;
 
   function startRound() {
+    if (playerNames.some((name, index) => name.trim() && !validHandicap(playerHandicaps[index] ?? ""))) return;
     const players = playerNames
-      .map((name, index) => ({ id: `${Date.now()}-${index}`, name: name.trim(), tee: playerTees[index] ?? "white" }))
+      .map((name, index) => ({ id: `${Date.now()}-${index}`, name: name.trim(), tee: playerTees[index] ?? "white",
+        handicap: (playerHandicaps[index] ?? "").trim() === "" ? undefined : Number(playerHandicaps[index]),
+      }))
       .filter((player) => player.name);
     if (players.length === 0) return;
 
@@ -179,6 +155,13 @@ export function Scorecard() {
     saveRound(null);
     setPlayerNames([""]);
     setPlayerTees(["white"]);
+    setPlayerHandicaps([""]);
+  }
+
+  function goHome() {
+    if (round && !isComplete && !window.confirm("Cancel this round and return to the homepage? Your scores for this round will be deleted.")) return false;
+    if (round) clearRound();
+    return true;
   }
 
   function renderHole(holeNumber: number, navigate: (direction: -1 | 1) => void): ReactNode {
@@ -222,13 +205,14 @@ export function Scorecard() {
 
           <section className="players-panel" aria-label="Player scores">
             <div className="player-score-list">
-              {round.players.map((player, index) => {
+              {playingOrder(round, currentHole.number, sampleCourse.holes).map((index) => {
+                const player = round.players[index];
                 const score = round.scores[currentHole.number][index];
                 const playerTee = player.tee ?? round.tee;
                 return (
                   <div className="player-score-row" key={player.id}>
                     <div className="player-identity">
-                      <div><strong>{player.name}</strong><span className="player-tee"><span className={`tee-dot tee-${playerTee}`} aria-hidden="true" />{teeOptions.find((option) => option.id === playerTee)?.label} tees</span></div>
+                      <div><strong>{player.name}</strong><span className="player-tee"><span className={`tee-dot tee-${playerTee}`} aria-hidden="true" />{teeOptions.find((option) => option.id === playerTee)?.label} tees{player.handicap != null && <span className="player-handicap"> / HCP {player.handicap}</span>}</span></div>
                     </div>
                     <div className="score-stepper" aria-label={`${player.name} score`}>
                       <Button
@@ -239,7 +223,12 @@ export function Scorecard() {
                         size="icon-lg"
                         variant="outline"
                       ><Minus /></Button>
-                      <output aria-live="polite" aria-label={score === null ? `${player.name}: score not entered` : `${player.name}: ${score} strokes`} className="score-value">{score ?? "\u2014"}</output>
+                      <div className="score-display" aria-live="polite">
+                        <output aria-label={score === null ? `${player.name}: score not entered` : `${player.name}: gross ${score} strokes`} className="score-value">{score ?? "\u2014"}</output>
+                        {score != null && player.handicap != null && (
+                          <span className="net-score">Net {netScore(score, player.handicap, currentHole.strokeIndex)}</span>
+                        )}
+                      </div>
                       <Button
                         aria-label={`Raise ${player.name}'s score`}
                         className="score-step-button"
@@ -275,7 +264,10 @@ export function Scorecard() {
   return (
     <div className="app-backdrop">
       <header className="topbar">
-        <Link aria-label="Coursecard home" className="wordmark" href="/">
+        <Link aria-label="Coursecard home" className="wordmark" href="/" onClick={(event) => {
+          event.preventDefault();
+          goHome();
+        }}>
           <span className="wordmark-icon"><Flag size={17} strokeWidth={2.2} /></span>
           <span>golf <span className="wordmark-light">scorecard</span></span>
         </Link>
@@ -283,10 +275,20 @@ export function Scorecard() {
           <span className="context-club">{sampleCourse.club}</span>
           <span className="context-course">{sampleCourse.name}</span>
         </div>
-        <div className={`connection-status ${isOnline ? "is-online" : "is-offline"}`}>
-          {isOnline ? <Wifi size={15} /> : <WifiOff size={15} />}
-          <span>{isOnline ? "Online" : "Offline ready"}</span>
-        </div>
+        <details className="header-menu" onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.currentTarget.removeAttribute("open");
+            event.currentTarget.querySelector("summary")?.focus();
+          }
+        }}>
+          <summary aria-label="Main menu"><Menu aria-hidden="true" size={28} /></summary>
+          <nav aria-label="Main navigation">
+            <button type="button" onClick={(event) => {
+              if (!goHome()) return;
+              event.currentTarget.closest("details")?.removeAttribute("open");
+            }}><Home aria-hidden="true" size={22} /> Homepage</button>
+          </nav>
+        </details>
       </header>
 
       <main className="main-content">
@@ -294,15 +296,19 @@ export function Scorecard() {
           <SetupScreen
             names={playerNames}
             playerTees={playerTees}
+            handicaps={playerHandicaps}
+            onHandicapChange={(index, value) => setPlayerHandicaps((previous) => previous.map((item, i) => i === index ? value : item))}
             onPlayerTeeChange={(index, value) => setPlayerTees((previous) => previous.map((item, i) => i === index ? value : item))}
             onNameChange={updatePlayerName}
             onAddPlayer={() => {
               setPlayerNames((previous) => [...previous, ""]);
               setPlayerTees((previous) => [...previous, "white"]);
+              setPlayerHandicaps((previous) => [...previous, ""]);
             }}
             onRemovePlayer={(index) => {
               setPlayerNames((previous) => previous.filter((_, i) => i !== index));
               setPlayerTees((previous) => previous.filter((_, i) => i !== index));
+              setPlayerHandicaps((previous) => previous.filter((_, i) => i !== index));
             }}
             onStart={startRound}
           />
@@ -327,6 +333,8 @@ export function Scorecard() {
 function SetupScreen({
   names,
   playerTees,
+  handicaps,
+  onHandicapChange,
   onPlayerTeeChange,
   onNameChange,
   onAddPlayer,
@@ -335,13 +343,16 @@ function SetupScreen({
 }: {
   names: string[];
   playerTees: TeeId[];
+  handicaps: string[];
+  onHandicapChange: (index: number, handicap: string) => void;
   onPlayerTeeChange: (index: number, tee: TeeId) => void;
   onNameChange: (index: number, name: string) => void;
   onAddPlayer: () => void;
   onRemovePlayer: (index: number) => void;
   onStart: () => void;
 }) {
-  const canStart = names.some((name) => name.trim().length > 0);
+  const canStart = names.some((name) => name.trim().length > 0) &&
+    names.every((name, index) => !name.trim() || validHandicap(handicaps[index] ?? ""));
 
   return (
     <section className="setup-screen">
@@ -399,6 +410,16 @@ function SetupScreen({
                       variant="ghost"
                     ><Trash2 /></Button>
                   )}
+                </div>
+                <div className="handicap-field">
+                  <label htmlFor={`handicap-${index}`}>Playing handicap <span>(optional)</span></label>
+                  <input id={`handicap-${index}`} type="number" inputMode="numeric"
+                    min={0} max={54} step={1} placeholder="0-54"
+                    value={handicaps[index] ?? ""}
+                    aria-invalid={!validHandicap(handicaps[index] ?? "")}
+                    aria-describedby={!validHandicap(handicaps[index] ?? "") ? `handicap-error-${index}` : undefined}
+                    onChange={(event) => onHandicapChange(index, event.target.value)} />
+                  {!validHandicap(handicaps[index] ?? "") && <p id={`handicap-error-${index}`} className="handicap-error">Use a whole number from 0 to 54.</p>}
                 </div>
                 <div className="player-tee-options" role="group" aria-label={`Player ${index + 1} tees`}>
                   {teeOptions.map((option) => (
